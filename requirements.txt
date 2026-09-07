@@ -1,0 +1,12 @@
+# Core data stack
+pandas>=2.2.0,<3.0.0
+matplotlib>=3.9.0,<4.0.0
+
+# Local LLM integration
+ollama>=0.6.2,<1.0.0
+
+# Agent framework
+strands-agents>=1.54.0,<2.0.0
+
+# Testing
+pytest>=9.1.1,<10.0.0
