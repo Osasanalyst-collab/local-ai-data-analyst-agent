@@ -1,5 +1,7 @@
 Local AI Data Analyst Agent
 
+[![Python Tests](https://github.com/Osasanalyst-collab/local-ai-data-analyst-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/Osasanalyst-collab/local-ai-data-analyst-agent/actions/workflows/tests.yml)
+
 A local, tool-using AI data analysis agent built with Python, Ollama, Qwen3, Strands Agents, Pandas, and Matplotlib.
 
 The project converts natural-language business questions into a minimal set of verified data-analysis operations, executes only the required tools, and returns deterministic results. It is designed as a portfolio project demonstrating practical skills in AI agents, data analysis, tool orchestration, testing, logging, and local LLM integration.
