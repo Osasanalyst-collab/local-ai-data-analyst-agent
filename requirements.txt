@@ -8,5 +8,8 @@ ollama>=0.6.2,<1.0.0
 # Agent framework
 strands-agents>=1.54.0,<2.0.0
 
+# Web interface
+streamlit>=1.49.0,<2.0.0
+
 # Testing
 pytest>=9.1.1,<10.0.0

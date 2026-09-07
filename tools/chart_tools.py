@@ -6,7 +6,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 from strands import tool
-
+from tools.csv_utils import read_csv_safely
 
 OUTPUT_DIR = "output"
 
@@ -40,7 +40,7 @@ def _load_csv(file_path: str):
         return None, f"CSV file not found: {file_path}"
 
     try:
-        df = pd.read_csv(file_path)
+        df = read_csv_safely(file_path)
     except pd.errors.EmptyDataError:
         return None, f"CSV file is empty: {file_path}"
     except Exception as exc:

@@ -1,36 +1,61 @@
-import pandas as pd
+
 from strands import tool
+
+from tools.csv_utils import read_csv_safely
 
 
 @tool
 def inspect_csv(file_path: str) -> str:
     """
-    Inspect a CSV file and return its basic structure.
+    Inspect a CSV dataset and return exact structural information.
+
+    This version keeps the original output contract used by the
+    automated tests while also providing the richer inspection details
+    needed by the Streamlit interface.
 
     Args:
-        file_path: Path to the CSV file.
+        file_path: Path to the CSV dataset.
+
+    Returns:
+        A deterministic dataset inspection report.
     """
     try:
-        df = pd.read_csv(file_path)
+        df = read_csv_safely(file_path)
 
-        return f"""
-CSV successfully loaded.
+        row_count = len(df)
+        column_count = len(df.columns)
 
-Rows: {len(df)}
-Columns: {len(df.columns)}
+        dtype_lines = [
+            f"{column}: {df[column].dtype}"
+            for column in df.columns
+        ]
 
-Column names:
-{list(df.columns)}
+        missing_counts = df.isna().sum()
 
-Data types:
-{df.dtypes.to_string()}
+        missing_lines = [
+            f"{column}: {int(missing_counts[column])}"
+            for column in df.columns
+        ]
 
-Missing values:
-{df.isnull().sum().to_string()}
+        if row_count > 0:
+            preview = df.head(5).to_string(index=False)
+        else:
+            preview = "No rows available."
 
-First 5 rows:
-{df.head().to_string()}
-"""
+        return (
+            "CSV successfully loaded.\n\n"
+            f"File: {file_path}\n"
+            f"Rows: {row_count}\n"
+            f"Columns: {column_count}\n\n"
+            f"Column names: {list(df.columns)}\n\n"
+            "Data types:\n"
+            + "\n".join(dtype_lines)
+            + "\n\nMissing values:\n"
+            + "\n".join(missing_lines)
+            + "\n\nFirst 5 rows:\n"
+            + preview
+        )
+
     except Exception as e:
         return f"Error reading CSV: {str(e)}"
 
@@ -38,13 +63,16 @@ First 5 rows:
 @tool
 def summary_statistics(file_path: str) -> str:
     """
-    Calculate descriptive statistics for numeric columns in a CSV file.
+    Generate descriptive statistics for numeric columns in a CSV file.
 
     Args:
-        file_path: Path to the CSV file.
+        file_path: Path to the CSV dataset.
+
+    Returns:
+        Descriptive statistics for numeric columns.
     """
     try:
-        df = pd.read_csv(file_path)
+        df = read_csv_safely(file_path)
 
         numeric_df = df.select_dtypes(include="number")
 
@@ -60,27 +88,32 @@ def summary_statistics(file_path: str) -> str:
 @tool
 def check_data_quality(file_path: str) -> str:
     """
-    Check missing values and duplicate rows in a CSV file.
+    Check a CSV dataset for missing values and duplicate rows.
+
+    The report format intentionally preserves the wording expected by
+    the existing automated tests.
 
     Args:
-        file_path: Path to the CSV file.
+        file_path: Path to the CSV dataset.
+
+    Returns:
+        A deterministic data-quality report.
     """
     try:
-        df = pd.read_csv(file_path)
+        df = read_csv_safely(file_path)
 
-        missing = df.isnull().sum()
-        duplicates = df.duplicated().sum()
+        missing_values = df.isna().sum()
+        duplicate_rows = int(df.duplicated().sum())
 
-        return f"""
-Data Quality Report
+        return (
+            "Data Quality Report\n\n"
+            f"Total rows: {len(df)}\n"
+            f"Total columns: {len(df.columns)}\n\n"
+            "Missing values:\n"
+            f"{missing_values.to_string()}\n\n"
+            "Duplicate rows:\n"
+            f"{duplicate_rows}\n"
+        )
 
-Total rows: {len(df)}
-
-Duplicate rows:
-{duplicates}
-
-Missing values by column:
-{missing.to_string()}
-"""
     except Exception as e:
         return f"Error checking data quality: {str(e)}"

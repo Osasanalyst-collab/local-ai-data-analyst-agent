@@ -77,3 +77,6 @@ dist/
 # Generated charts accidentally saved in data folder
 data/*.png
 data/Customer.csv
+
+# Uploaded CSV files from Streamlit
+data/uploads/

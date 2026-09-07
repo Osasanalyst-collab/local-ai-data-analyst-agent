@@ -13,6 +13,7 @@ from strands.hooks import (
     HookRegistry,
     BeforeInvocationEvent,
     BeforeToolCallEvent,
+    AfterToolCallEvent,
 )
 
 from tools.data_tools import (
@@ -374,7 +375,30 @@ def create_plan(user_request):
 # EXECUTION REQUEST
 # ============================================================
 
-def create_execution_request(user_request, operation_name):
+def create_execution_request(
+    user_request,
+    operation_name,
+    dataset_path=None,
+):
+    """
+    Build the focused request for one specialised executor.
+
+    When Streamlit supplies dataset_path, that path is authoritative.
+    """
+
+    dataset_instruction = ""
+
+    if dataset_path:
+        dataset_instruction = f"""
+AUTHORITATIVE DATASET PATH:
+
+{dataset_path}
+
+You MUST use exactly this dataset path.
+Do not replace it with data/Customers.csv.
+Do not shorten it.
+Do not infer a different file path.
+"""
 
     return f"""
 Original user request:
@@ -385,13 +409,13 @@ Your assigned operation:
 
 {operation_name}
 
+{dataset_instruction}
+
 Perform ONLY your assigned operation.
 
 Ignore other operations in the original request.
 
 Use your available tool.
-
-Use the exact file path and column names supplied by the user.
 
 Report only the result of your assigned operation.
 
@@ -451,15 +475,104 @@ class LimitToolCounts(HookProvider):
 
 
 # ============================================================
+# DATASET-PATH SAFEGUARD
+# ============================================================
+
+class ForceDatasetPath(HookProvider):
+    """
+    Force every tool call to use the dataset selected by the UI.
+    """
+
+    def __init__(self, dataset_path):
+        self.dataset_path = str(dataset_path)
+
+    def register_hooks(self, registry: HookRegistry) -> None:
+        registry.add_callback(
+            BeforeToolCallEvent,
+            self.force_dataset_path,
+        )
+
+    def force_dataset_path(self, event: BeforeToolCallEvent) -> None:
+        tool_input = event.tool_use.get("input")
+
+        if not isinstance(tool_input, dict):
+            tool_input = {}
+            event.tool_use["input"] = tool_input
+
+        # All analysis tools in this project accept file_path.
+        tool_input["file_path"] = self.dataset_path
+
+
+# ============================================================
+# VERIFIED TOOL-RESULT CAPTURE
+# ============================================================
+
+class CaptureToolResult(HookProvider):
+    """
+    Capture the actual Python tool result before the LLM can paraphrase it.
+    """
+
+    def __init__(self):
+        self.result_text = None
+
+    def register_hooks(self, registry: HookRegistry) -> None:
+        registry.add_callback(
+            AfterToolCallEvent,
+            self.capture_result,
+        )
+
+    def capture_result(self, event: AfterToolCallEvent) -> None:
+        result = event.result
+
+        if isinstance(result, Exception):
+            self.result_text = f"Tool execution error: {result}"
+            return
+
+        if not isinstance(result, dict):
+            self.result_text = str(result)
+            return
+
+        content = result.get("content", [])
+        parts = []
+
+        for item in content:
+            if not isinstance(item, dict):
+                parts.append(str(item))
+                continue
+
+            if "text" in item:
+                parts.append(str(item["text"]))
+            elif "json" in item:
+                parts.append(
+                    json.dumps(
+                        item["json"],
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            elif "document" in item:
+                parts.append(str(item["document"]))
+            else:
+                parts.append(str(item))
+
+        if parts:
+            self.result_text = "\n".join(parts)
+        else:
+            self.result_text = str(result)
+
+
+# ============================================================
 # EXECUTE PLAN
 # ============================================================
 
-def execute_plan(user_request, operations):
-
+def execute_plan(
+    user_request,
+    operations,
+    dataset_path=None,
+):
     results = []
 
     for operation_name in operations:
-
         logger.info("Executing operation: %s", operation_name)
 
         tool_function = TOOL_REGISTRY[operation_name]
@@ -470,10 +583,22 @@ def execute_plan(user_request, operations):
             }
         )
 
+        result_capture = CaptureToolResult()
+
+        hooks = [
+            tool_limit,
+            result_capture,
+        ]
+
+        if dataset_path:
+            hooks.append(
+                ForceDatasetPath(dataset_path)
+            )
+
         executor = Agent(
             model=model,
             tools=[tool_function],
-            hooks=[tool_limit],
+            hooks=hooks,
             system_prompt=f"""
 You are a specialised Data Analyst tool executor.
 
@@ -483,32 +608,37 @@ You have exactly ONE available tool:
 
 Perform only the operation assigned to you.
 
-Use the exact file path and column names from the user's request.
-
 You MUST use your available tool exactly once.
 
 Never call the tool more than once during this request.
 
 If the tool returns an error or validation message, that is still
-the verified result. Report it directly and do not retry the tool.
+the verified result. Do not retry the tool.
 
 Do not calculate or invent dataset results yourself.
 
 Do not discuss operations outside your assigned responsibility.
 
-After the single tool execution, report only the result of your
-assigned operation.
+The application may enforce the dataset file path at tool-call time.
+Do not substitute a different dataset.
+
+After the single tool execution, finish the turn.
 """,
         )
 
         focused_request = create_execution_request(
             user_request,
             operation_name,
+            dataset_path=dataset_path,
         )
 
         response = executor(focused_request)
 
-        result_text = str(response)
+        result_text = (
+            result_capture.result_text
+            if result_capture.result_text is not None
+            else str(response)
+        )
 
         logger.info(
             "Completed operation: %s",
@@ -582,11 +712,19 @@ def create_final_response(user_request, results):
 # PROCESS USER REQUEST
 # ============================================================
 
-def process_request(user_request):
-
+def process_request(
+    user_request,
+    dataset_path=None,
+):
     start_time = time.perf_counter()
 
     logger.info("User request: %s", user_request)
+
+    if dataset_path:
+        logger.info(
+            "Authoritative dataset path: %s",
+            dataset_path,
+        )
 
     try:
         operations = create_plan(user_request)
@@ -605,7 +743,7 @@ def process_request(user_request):
             )
 
             print(f"\nAgent: {message}")
-            return
+            return message
 
         print("\nPlan:")
         for operation in operations:
@@ -616,10 +754,12 @@ def process_request(user_request):
         results = execute_plan(
             user_request,
             operations,
+            dataset_path=dataset_path,
         )
 
         print("\nAgent:")
-        create_final_response(
+
+        final_text = create_final_response(
             user_request,
             results,
         )
@@ -630,6 +770,8 @@ def process_request(user_request):
             "Request completed successfully in %.2f seconds",
             elapsed,
         )
+
+        return final_text
 
     except Exception:
         elapsed = time.perf_counter() - start_time

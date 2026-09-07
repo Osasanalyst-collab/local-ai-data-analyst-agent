@@ -1,5 +1,6 @@
 import pandas as pd
 from strands import tool
+from tools.csv_utils import read_csv_safely
 
 
 @tool
@@ -30,7 +31,7 @@ def group_average(
         The grouped average values.
     """
     try:
-        df = pd.read_csv(file_path)
+        df = read_csv_safely(file_path)
 
         if group_column not in df.columns:
             return f"Column '{group_column}' does not exist."
